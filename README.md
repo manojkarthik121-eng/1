@@ -19,6 +19,20 @@ Luminary is built on the Claude API. It stores what you learn, explains any topi
 
 ## Quick start
 
+### Easiest: double-click (no terminal needed)
+
+1. Install **Node.js** (the "LTS" version) from <https://nodejs.org>.
+2. Download this project and unzip it.
+3. Double-click the launcher for your computer:
+   - **Windows:** `Start Luminary (Windows).bat`. If Windows shows "Windows protected your PC", click **More info → Run anyway**.
+   - **Mac:** `Start Luminary (Mac).command`. The first time, **right-click it → Open → Open**, because macOS blocks downloaded scripts by default.
+4. The first run installs everything (about a minute). Then either paste your Anthropic API key, or just press Enter to try the demo.
+5. The app opens in your browser. Keep the black window open while you use it, and close it to stop.
+
+Your key is saved in a `.env` file in the folder, so you're only asked once. Delete that file to change the key.
+
+### From a terminal
+
 Requires **Node.js 20+**.
 
 ```bash

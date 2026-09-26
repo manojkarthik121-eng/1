@@ -1,5 +1,7 @@
+import "./env.js";
 import express from "express";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Store } from "./store.js";
 import { newCard, review, isDue } from "./srs.js";
@@ -452,12 +454,36 @@ export function createApp(store) {
   return app;
 }
 
+function openBrowser(url) {
+  const [cmd, args] =
+    process.platform === "win32" ? ["cmd", ["/c", "start", "", url]]
+    : process.platform === "darwin" ? ["open", [url]]
+    : ["xdg-open", [url]];
+  try {
+    spawn(cmd, args, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+  } catch {}
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dataFile = process.env.LUMINARY_DATA || path.join(root, "data", "db.json");
   const store = new Store(dataFile);
   const port = Number(process.env.PORT) || 3000;
   const host = process.env.HOST || "127.0.0.1";
-  createApp(store).listen(port, host, () => {
-    console.log(`Luminary running at http://${host}:${port}  (model: ${MODEL}${MOCK ? ", DEMO MODE" : ""})`);
+  const url = `http://${host}:${port}`;
+  const shouldOpen = process.env.LUMINARY_OPEN === "1";
+  const server = createApp(store).listen(port, host, () => {
+    console.log(`\nLuminary is running at ${url}  (model: ${MODEL}${MOCK ? ", DEMO MODE - sample answers" : ""})`);
+    console.log("Keep this window open while you use it. Close it (or press Ctrl+C) to stop.\n");
+    if (shouldOpen) openBrowser(url);
+  });
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.log(`\nLuminary (or another program) is already using ${url}.`);
+      console.log("If Luminary is already open in another window, just use that one.\n");
+      if (shouldOpen) openBrowser(url);
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
   });
 }

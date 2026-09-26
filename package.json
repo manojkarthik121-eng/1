@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "demo": "LUMINARY_MOCK=1 node server/index.js",
+    "demo": "node server/index.js --demo",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

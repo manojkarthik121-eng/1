@@ -5,7 +5,7 @@ import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import * as mock from "./mock.js";
 
 export const MODEL = process.env.LUMINARY_MODEL || "claude-opus-5";
-export const MOCK = process.env.LUMINARY_MOCK === "1";
+export const MOCK = process.env.LUMINARY_MOCK === "1" || process.argv.includes("--demo");
 
 // Server-side refusal fallbacks: if a safety classifier declines a request,
 // the API re-runs it on a fallback model inside the same call.
