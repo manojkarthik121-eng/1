@@ -2,6 +2,7 @@ import "./env.js";
 import express from "express";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { createAuth, readCookie, isLoopback } from "./auth.js";
 import { fileURLToPath } from "node:url";
 import { Store } from "./store.js";
 import { newCard, review, isDue } from "./srs.js";
@@ -12,8 +13,16 @@ import * as P from "./prompts.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
 
-export function createApp(store) {
+export function createApp(store, { password = process.env.LUMINARY_PASSWORD } = {}) {
   const app = express();
+  const auth = createAuth(password);
+  // Behind a hosting provider's HTTPS proxy: trust it for client IP and https detection.
+  if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
+  app.disable("x-powered-by");
+  app.use((req, res, next) => {
+    res.set({ "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin" });
+    next();
+  });
   app.use(express.json({ limit: "256kb" }));
   app.use(express.static(path.join(root, "public")));
   app.get("/vendor/marked.js", (req, res) => res.sendFile(path.join(root, "node_modules/marked/lib/marked.umd.js")));
@@ -107,9 +116,37 @@ export function createApp(store) {
   });
 
   // ---------- status ----------
+  app.get("/api/health", (req, res) => res.json({ ok: true }));
+
   app.get("/api/status", (req, res) => {
-    res.json({ model: MODEL, mock: MOCK, webSearch: WEB_SEARCH, maxPdfBytes: MAX_PDF_BYTES });
+    const authenticated = !auth || auth.valid(readCookie(req));
+    res.json({
+      authRequired: Boolean(auth),
+      authenticated,
+      ...(authenticated && { model: MODEL, mock: MOCK, webSearch: WEB_SEARCH, maxPdfBytes: MAX_PDF_BYTES }),
+    });
   });
+
+  // ---------- login (only when LUMINARY_PASSWORD is set) ----------
+  if (auth) {
+    app.post("/api/login", (req, res) => {
+      if (auth.tooManyAttempts(req.ip)) throw new AppError(429, "Too many attempts. Wait 15 minutes and try again.");
+      if (!auth.checkPassword(req.body?.password)) throw new AppError(401, "Wrong password");
+      auth.clearAttempts(req.ip);
+      res.set("Set-Cookie", auth.cookie(auth.issue(), req.secure));
+      res.json({ ok: true });
+    });
+
+    app.post("/api/logout", (req, res) => {
+      res.set("Set-Cookie", auth.cookie("", req.secure));
+      res.json({ ok: true });
+    });
+
+    app.use("/api", (req, res, next) => {
+      if (auth.valid(readCookie(req))) return next();
+      res.status(401).json({ error: "Please log in", login: true });
+    });
+  }
 
   // ---------- topics / explore ----------
   app.get("/api/topics", (req, res) => {
@@ -469,6 +506,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const store = new Store(dataFile);
   const port = Number(process.env.PORT) || 3000;
   const host = process.env.HOST || "127.0.0.1";
+  if (!isLoopback(host) && !process.env.LUMINARY_PASSWORD) {
+    console.error(`Refusing to start: HOST=${host} makes Luminary reachable from other computers,`);
+    console.error("so set LUMINARY_PASSWORD to require a login first.");
+    process.exit(1);
+  }
   const url = `http://${host}:${port}`;
   const shouldOpen = process.env.LUMINARY_OPEN === "1";
   const server = createApp(store).listen(port, host, () => {

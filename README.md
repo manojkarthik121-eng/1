@@ -59,6 +59,24 @@ See `.env.example`. All settings are optional:
 - `PORT` / `HOST`: default `3000` / `127.0.0.1`.
 - `LUMINARY_DATA`: where your data is saved (default `./data/db.json`).
 
+## Put it online (use it from any device)
+
+Luminary can run as a password-protected website, which is useful if your own computer can't run Node.js 20 (for example Windows 7). The included `render.yaml` sets it up on [Render](https://render.com):
+
+1. Sign up at render.com using **Sign in with GitHub**.
+2. Click **New + → Blueprint** and choose this repository.
+3. Fill in the two secrets it asks for:
+   - `ANTHROPIC_API_KEY`: your key from console.anthropic.com
+   - `LUMINARY_PASSWORD`: a strong password you'll use to log in
+4. Click **Apply** and wait a few minutes for the first build.
+5. Open the `https://luminary-….onrender.com` address it shows, and log in.
+
+The blueprint uses Render's paid **Starter** plan with a small disk, so the app stays awake and your topics and progress are kept. You can switch it to the **Free** plan in Render's settings, but a free app sleeps when idle and loses saved data whenever it restarts. Check Render's pricing page for current prices.
+
+Security:
+- The app refuses to accept outside connections unless `LUMINARY_PASSWORD` is set.
+- Logins use a signed, HTTP-only cookie that lasts 30 days, and password guessing is rate-limited.
+
 ## How it works
 
 ```

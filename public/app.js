@@ -38,6 +38,7 @@ async function api(path, { method = "GET", body } = {}) {
   });
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && data.login) showLogin();
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
@@ -97,6 +98,7 @@ async function uploadPdfFile(file, path, params = {}) {
   const query = new URLSearchParams({ filename: file.name, ...params });
   const res = await fetch(`/api${path}?${query}`, { method: "POST", headers: { "Content-Type": "application/pdf" }, body: file });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && data.login) showLogin();
   if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
   return data;
 }
@@ -556,7 +558,11 @@ function renderChat(body, ownerId, history, topicTitle, docCount = 0) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, mode, webSearch: web }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Request failed");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401 && data.login) showLogin();
+        throw new Error(data.error || "Request failed");
+      }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -1007,11 +1013,48 @@ function renderTechniques() {
 }
 
 // ---------------- boot ----------------
+// ---------------- login ----------------
+function showLogin() {
+  if ($("#login")) return;
+  const password = h("input", { type: "password", placeholder: "Password", autocomplete: "current-password", "aria-label": "Password" });
+  const error = h("p", { class: "login-error", role: "alert" });
+  const button = h("button", { class: "primary", type: "submit" }, "Log in");
+  const form = h("form", { class: "card login-card", onsubmit: async (e) => {
+      e.preventDefault();
+      button.disabled = true;
+      error.textContent = "";
+      try {
+        const res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: password.value }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Login failed");
+        location.reload();
+      } catch (err) {
+        error.textContent = err.message;
+        button.disabled = false;
+        password.select();
+      }
+    } },
+    h("div", { class: "brand", style: "padding:0;margin-bottom:6px" }, h("span", { class: "brand-mark" }, "✦"), " Luminary"),
+    h("p", { class: "muted" }, "Enter your password to continue."),
+    password, error, button);
+  document.body.append(h("div", { id: "login", class: "login" }, form));
+  password.focus();
+}
+
+async function logout() {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  location.reload();
+}
+
 async function boot() {
   $("#menu-btn").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
   try {
     state.status = await api("/status");
+    if (state.status.authRequired && !state.status.authenticated) return showLogin();
     $("#status").textContent = state.status.mock ? "Demo mode · canned responses" : `Powered by ${state.status.model}`;
+    if (state.status.authRequired) {
+      $("#status").append(" · ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); logout(); } }, "Log out"));
+    }
   } catch {}
   await refreshSidebar();
   window.addEventListener("hashchange", route);

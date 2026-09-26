@@ -1,0 +1,31 @@
+# Render Blueprint: deploys Luminary as a password-protected website.
+# In Render: New + > Blueprint > pick this repository. You'll be asked for
+# ANTHROPIC_API_KEY and LUMINARY_PASSWORD.
+services:
+  - type: web
+    name: luminary
+    runtime: node
+    # "starter" is a paid plan: it stays awake and supports the disk below,
+    # which keeps your topics and progress. On "free" the app sleeps when
+    # idle and anything you save is lost whenever it restarts.
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: luminary-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LUMINARY_PASSWORD
+        sync: false
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "1"
+      - key: LUMINARY_DATA
+        value: /var/data/db.json
+      - key: NODE_VERSION
+        value: "22"
