@@ -1,0 +1,22 @@
+{
+  "name": "luminary",
+  "version": "0.1.0",
+  "description": "An AI learning companion: deep understanding of any topic, open-ended Q&A, action plans, progress tracking and proven learning techniques.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "demo": "LUMINARY_MOCK=1 node server/index.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "dompurify": "^3.4.16",
+    "express": "^5.2.1",
+    "marked": "^18.0.14"
+  }
+}

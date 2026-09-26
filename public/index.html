@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Luminary — understand anything</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/vendor/marked.js" defer></script>
+  <script src="/vendor/purify.js" defer></script>
+  <script src="/techniques.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#/"><span class="brand-mark">✦</span> Luminary</a>
+      <nav class="nav">
+        <a href="#/" data-nav="home">Home</a>
+        <a href="#/progress" data-nav="progress">Progress</a>
+        <a href="#/review" data-nav="review">Review <span class="pill" id="due-pill" hidden></span></a>
+        <a href="#/techniques" data-nav="techniques">Learning techniques</a>
+      </nav>
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Your topics</div>
+        <ul class="topic-list" id="topic-list"></ul>
+      </div>
+      <div class="sidebar-foot" id="status"></div>
+    </aside>
+    <main class="main">
+      <button class="menu-btn" id="menu-btn" aria-label="Menu">☰</button>
+      <div id="view"></div>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>
