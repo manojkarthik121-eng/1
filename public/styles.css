@@ -270,3 +270,16 @@ details summary { cursor: pointer; font-weight: 600; }
 .row select, .row input[type=number] { width: auto; }
 .row > label { display: inline; }
 .sidebar { align-self: start; }
+
+/* ---------- web search, sources & documents ---------- */
+.toggle { font-size: 0.85rem; padding: 6px 12px; }
+.toggle.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.activity { font-size: 0.8rem; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+.activity:not(:empty) { margin-bottom: 8px; }
+.sources { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 0.82rem; }
+.sources-title { font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 4px; }
+.sources ol { margin: 0; padding-left: 1.3em; }
+.sources li { margin-bottom: 2px; overflow-wrap: anywhere; }
+.doc-list { list-style: none; padding: 0; margin: 10px 0; }
+.doc-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.doc-list li:last-child { border-bottom: none; }

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Store } from "./store.js";
 import { newCard, review, isDue } from "./srs.js";
 import { overview, topicMastery, learnerSnapshot, planProgress } from "./progress.js";
-import { generateJSON, streamChat, toAppError, AppError, MODEL, MOCK } from "./claude.js";
+import { generateJSON, streamChat, uploadPdf, deleteFile, toAppError, AppError, MODEL, MOCK, WEB_SEARCH } from "./claude.js";
 import * as P from "./prompts.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -18,6 +18,9 @@ export function createApp(store) {
   app.get("/vendor/purify.js", (req, res) => res.sendFile(path.join(root, "node_modules/dompurify/dist/purify.js")));
 
   const pendingQuizzes = new Map();
+  const MAX_PDF_BYTES = 32 * 1024 * 1024;
+  const MAX_DOCS_PER_TOPIC = 5;
+  const pdfBody = express.raw({ type: "application/pdf", limit: MAX_PDF_BYTES });
 
   // ---------- helpers ----------
   const text = (value, field, max = 4000, { required = true } = {}) => {
@@ -48,6 +51,49 @@ export function createApp(store) {
     return { owner: topic, topic };
   };
 
+  // Validates an uploaded PDF body and pushes it to the Files API.
+  const receivePdf = async (req) => {
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || !buf.length) throw new AppError(400, "Upload a PDF file (Content-Type: application/pdf)");
+    if (buf.subarray(0, 5).toString("latin1") !== "%PDF-") throw new AppError(400, "That file doesn't look like a PDF");
+    const name = text(req.query.filename, "filename", 200, { required: false }).replace(/[\r\n]/g, " ") || "document.pdf";
+    const file = await uploadPdf(buf, name);
+    return { id: Store.id(), name, size: buf.length, fileId: file.id, at: new Date().toISOString() };
+  };
+
+  const buildDepthMap = (name, background, documents) =>
+    generateJSON({
+      kind: "depthMap",
+      system: P.DEPTH_MAP_SYSTEM,
+      prompt: P.depthMapPrompt(name, background, documents.map((d) => d.name)),
+      schema: P.DEPTH_MAP_SCHEMA,
+      documents,
+      effort: "high",
+    });
+
+  const addFlashcards = (topicId, depthMap) => {
+    const existing = new Set(store.data.cards.filter((c) => c.topicId === topicId).map((c) => c.front));
+    for (const card of depthMap.flashcards ?? []) {
+      if (existing.has(card.front)) continue;
+      store.data.cards.push({ id: Store.id(), ...newCard(topicId, card.front, card.back) });
+    }
+  };
+
+  const createTopicWithMap = async (name, background, documents = []) => {
+    let depthMap;
+    try {
+      depthMap = await buildDepthMap(name, background, documents);
+    } catch (err) {
+      await Promise.all(documents.map((d) => deleteFile(d.fileId)));
+      throw err;
+    }
+    const topic = store.createTopic(name);
+    Object.assign(topic, { background, depthMap, documents });
+    addFlashcards(topic.id, depthMap);
+    store.log("explore", topic.id);
+    return topic;
+  };
+
   const topicSummary = (t) => ({
     id: t.id,
     name: t.name,
@@ -60,7 +106,7 @@ export function createApp(store) {
 
   // ---------- status ----------
   app.get("/api/status", (req, res) => {
-    res.json({ model: MODEL, mock: MOCK });
+    res.json({ model: MODEL, mock: MOCK, webSearch: WEB_SEARCH, maxPdfBytes: MAX_PDF_BYTES });
   });
 
   // ---------- topics / explore ----------
@@ -71,21 +117,48 @@ export function createApp(store) {
   app.post("/api/topics", async (req, res) => {
     const name = text(req.body.name, "name", 200);
     const background = text(req.body.background, "background", 1000, { required: false });
-    const depthMap = await generateJSON({
-      kind: "depthMap",
-      system: P.DEPTH_MAP_SYSTEM,
-      prompt: P.depthMapPrompt(name, background),
-      schema: P.DEPTH_MAP_SCHEMA,
-      effort: "high",
-    });
-    const topic = store.createTopic(name);
-    topic.background = background;
-    topic.depthMap = depthMap;
-    for (const card of depthMap.flashcards ?? []) {
-      store.data.cards.push({ id: Store.id(), ...newCard(topic.id, card.front, card.back) });
-    }
-    store.log("explore", topic.id);
+    const topic = await createTopicWithMap(name, background);
     res.status(201).json({ ...topic, mastery: topicMastery(store.data, topic.id) });
+  });
+
+  // Start a topic from a PDF: the depth map is built from the document.
+  app.post("/api/topics/from-pdf", pdfBody, async (req, res) => {
+    const doc = await receivePdf(req);
+    const name = text(req.query.name, "name", 200, { required: false }) || doc.name.replace(/\.pdf$/i, "");
+    const background = text(req.query.background, "background", 1000, { required: false });
+    const topic = await createTopicWithMap(name, background, [doc]);
+    res.status(201).json({ ...topic, mastery: topicMastery(store.data, topic.id) });
+  });
+
+  // ---------- documents attached to a topic ----------
+  app.post("/api/topics/:id/documents", pdfBody, async (req, res) => {
+    const topic = topicOr404(req.params.id);
+    topic.documents ??= [];
+    if (topic.documents.length >= MAX_DOCS_PER_TOPIC) throw new AppError(400, `A topic can have at most ${MAX_DOCS_PER_TOPIC} documents`);
+    const doc = await receivePdf(req);
+    topic.documents.push(doc);
+    store.log("upload", topic.id, { name: doc.name });
+    res.status(201).json(doc);
+  });
+
+  app.delete("/api/topics/:id/documents/:docId", async (req, res) => {
+    const topic = topicOr404(req.params.id);
+    const doc = (topic.documents ?? []).find((d) => d.id === req.params.docId);
+    if (!doc) throw new AppError(404, "Document not found");
+    topic.documents = topic.documents.filter((d) => d.id !== doc.id);
+    store.save();
+    await deleteFile(doc.fileId);
+    res.status(204).end();
+  });
+
+  // Rebuild the depth map, e.g. after adding documents.
+  app.post("/api/topics/:id/regenerate", async (req, res) => {
+    const topic = topicOr404(req.params.id);
+    const depthMap = await buildDepthMap(topic.name, topic.background, topic.documents ?? []);
+    topic.depthMap = depthMap;
+    addFlashcards(topic.id, depthMap);
+    store.log("explore", topic.id);
+    res.json({ ...topic, mastery: topicMastery(store.data, topic.id) });
   });
 
   app.get("/api/topics/:id", (req, res) => {
@@ -93,9 +166,10 @@ export function createApp(store) {
     res.json({ ...topic, mastery: topicMastery(store.data, topic.id) });
   });
 
-  app.delete("/api/topics/:id", (req, res) => {
-    topicOr404(req.params.id);
+  app.delete("/api/topics/:id", async (req, res) => {
+    const topic = topicOr404(req.params.id);
     store.deleteTopic(req.params.id);
+    await Promise.all((topic.documents ?? []).map((d) => deleteFile(d.fileId)));
     res.status(204).end();
   });
 
@@ -104,11 +178,13 @@ export function createApp(store) {
     const { owner, topic } = chatOwner(req.params.id);
     const message = text(req.body.message, "message", 8000);
     const mode = req.body.mode === "socratic" ? "socratic" : "guide";
+    const webSearch = WEB_SEARCH && req.body.webSearch !== false;
+    const documents = topic?.documents ?? [];
 
     const history = owner.chat.slice(-40).map(({ role, content }) => ({ role, content }));
     const messages = [...history, { role: "user", content: message }];
     const snapshot = topic ? learnerSnapshot(store.data, topic.id) : "";
-    const system = P.chatSystem(mode, snapshot);
+    const system = P.chatSystem(mode, snapshot, { webSearch, hasDocuments: documents.length > 0 });
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -120,14 +196,18 @@ export function createApp(store) {
     res.on("close", () => abort.abort());
 
     try {
-      const reply = await streamChat({
+      const { text: reply, sources } = await streamChat({
         system,
         messages,
+        documents,
+        webSearch,
         signal: abort.signal,
         onText: (t) => send({ type: "text", text: t }),
+        onSearch: (query) => send({ type: "search", query }),
       });
+      if (sources.length) send({ type: "sources", sources });
       const at = new Date().toISOString();
-      owner.chat.push({ role: "user", content: message, at }, { role: "assistant", content: reply, at, mode });
+      owner.chat.push({ role: "user", content: message, at }, { role: "assistant", content: reply, at, mode, sources });
       store.log("ask", topic?.id ?? null);
       send({ type: "done" });
     } catch (err) {
@@ -168,6 +248,7 @@ export function createApp(store) {
         recentChat,
       }),
       schema: P.PLAN_SCHEMA,
+      documents: topic.documents ?? [],
       effort: "high",
     });
     plan.createdAt = new Date().toISOString();
@@ -206,6 +287,7 @@ export function createApp(store) {
         snapshot: learnerSnapshot(store.data, topic.id),
       }),
       schema: P.QUIZ_SCHEMA,
+      documents: topic.documents ?? [],
       effort: "medium",
     });
     const quizId = Store.id();
@@ -280,6 +362,7 @@ export function createApp(store) {
       system: P.FEYNMAN_SYSTEM,
       prompt: P.feynmanPrompt(topic.name, concept, explanation),
       schema: P.FEYNMAN_SCHEMA,
+      documents: topic.documents ?? [],
       effort: "high",
       maxTokens: 16000,
     });
@@ -354,7 +437,13 @@ export function createApp(store) {
   // ---------- errors ----------
   app.use("/api", (req, res) => res.status(404).json({ error: "Not found" }));
   app.use((err, req, res, next) => {
-    const e = toAppError(err);
+    // body-parser errors (too large, malformed JSON) carry a safe 4xx status.
+    const e =
+      err.type === "entity.too.large"
+        ? new AppError(413, "That file is too large (max 32 MB)")
+        : err.expose && err.status < 500
+          ? new AppError(err.status, err.message)
+          : toAppError(err);
     if (e.status >= 500) console.error(err);
     if (res.headersSent) return res.end();
     res.status(e.status).json({ error: e.message });

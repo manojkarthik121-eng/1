@@ -9,7 +9,8 @@ Luminary is built on the Claude API. It stores what you learn, explains any topi
 | Area | What it does |
 | --- | --- |
 | **Understand** (depth maps) | Enter any topic. You get a layered explanation that goes from *Intuition* → *Foundations* → *Working knowledge* → *Advanced* → *Expert frontier*. It also includes first principles, mental models, common misconceptions (click to reveal the truth), analogies, links to other fields and big questions to think about. |
-| **Ask** (tutor) | Ask any question, about a topic or about anything (`Ask anything`). **Guide** mode gives a clear answer, a check-your-understanding question and a **next step**. **Socratic** mode leads you to the answer with questions. Replies stream in live and adapt to your progress data. |
+| **Learn from your PDFs** | Start a topic from a PDF (lecture notes, a paper, a textbook chapter), or attach up to 5 PDFs to any topic. The depth map is built around the document. The tutor answers from it and cites page numbers. Quizzes test what's in it, and action plans and teach-back grading use it too. |
+| **Ask** (tutor) | Ask any question, about a topic or about anything (`Ask anything`). **Guide** mode gives a clear answer, a check-your-understanding question and a **next step**. **Socratic** mode leads you to the answer with questions. Replies stream in live and adapt to your progress data. With **🌐 Web search** on, the tutor searches the web when a question needs current or checkable facts, shows what it searched and lists clickable sources. |
 | **Act** (action plans) | Tell it your goal, level and daily time. You get a *north star*, tasks for today and this week that you can tick off, milestones with success criteria, techniques chosen for that topic, pitfalls to avoid and checkpoint questions. |
 | **Practice** | **Quizzes** that test understanding. Short answers are graded by AI, and missed questions can be turned into flashcards. **Feynman teach-back**: you explain the concept in simple words and get scored on accuracy, clarity and completeness, with specific gaps pointed out. **Flashcards** scheduled with spaced repetition (SM-2). |
 | **Progress** | A 0–100 mastery score per topic that combines recent quiz scores (45%), teach-back scores (30%) and long-term flashcard retention (25%). Also: levels from Novice to Expert, a daily streak, a 12-week activity heatmap and quiz history. |
@@ -39,6 +40,7 @@ See `.env.example`. All settings are optional:
 
 - `LUMINARY_MODEL`: defaults to `claude-opus-5`.
 - `LUMINARY_FALLBACKS=0`: turns off server-side refusal fallbacks. They are on by default for Opus 5, so a request that a safety classifier declines is retried on a fallback model instead of failing.
+- `LUMINARY_WEB_SEARCH=0`: turns web search off for everyone (it can also be turned off per chat in the UI). Web search must be enabled for your organization in the Anthropic Console, and searches are billed per use.
 - `LUMINARY_MOCK=1`: demo mode.
 - `PORT` / `HOST`: default `3000` / `127.0.0.1`.
 - `LUMINARY_DATA`: where your data is saved (default `./data/db.json`).
@@ -48,7 +50,8 @@ See `.env.example`. All settings are optional:
 ```
 public/            no-build single-page app (vanilla JS, marked + DOMPurify for Markdown)
 server/index.js    Express API routes
-server/claude.js   Anthropic SDK wrapper: structured JSON outputs + streaming chat, error mapping
+server/claude.js   Anthropic SDK wrapper: structured outputs, streaming chat with web search,
+                   Files API uploads, citation/source extraction, error mapping
 server/prompts.js  system prompts and JSON schemas for every feature
 server/progress.js mastery, streaks, heatmap, learner snapshot fed back to Claude
 server/srs.js      SM-2 spaced repetition
@@ -57,7 +60,8 @@ server/mock.js     canned responses for demo mode and tests
 ```
 
 - Depth maps, plans, quizzes, grading, Feynman feedback and coaching use **structured outputs** (`output_config.format` with a JSON schema), so the replies always have a shape the app can read.
-- The tutor streams its replies to the browser over Server-Sent Events.
+- The tutor streams its replies to the browser over Server-Sent Events. Web search uses Claude's server-side `web_search` tool. Long searches that return `pause_turn` are resumed automatically, and cited sources are pulled out of the reply's citations.
+- PDFs are uploaded once through the **Files API** and referenced by `file_id`. They are sent as a fixed, cached prefix (`cache_control`), so follow-up questions about the same documents cost much less. Citations are enabled for chat only, because they can't be combined with structured outputs.
 - Every AI call includes a short **learner snapshot**: mastery, weak concepts from the last quiz, gaps from the last teach-back and plan progress. This lets explanations, quizzes and plans adapt to you over time.
 - Quiz answers stay on the server until you submit.
 
@@ -71,8 +75,7 @@ Unit tests cover SM-2 scheduling and the progress maths. An end-to-end API test 
 
 ## Ideas for next steps
 
-- Web search for current events and citations (`web_search` server tool)
 - Accounts and multi-user storage (e.g. SQLite/Postgres)
-- Uploading your own notes and PDFs to learn from
+- Other file types (Word, slides, images of handwritten notes)
 - Voice mode for teach-back
 - Diagrams in depth maps (dual coding)

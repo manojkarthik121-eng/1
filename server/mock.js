@@ -137,16 +137,22 @@ export function json(kind, prompt) {
   }
 }
 
-export async function chat(messages, onText) {
+export async function chat(messages, onText, { webSearch = false, documents = [], onSearch } = {}) {
   const last = messages.at(-1)?.content ?? "";
+  const sources = [];
+  if (webSearch) {
+    onSearch?.(String(last).slice(0, 60));
+    sources.push({ type: "web", url: "https://example.com/demo-source", title: "Example source (demo)" });
+  }
+  for (const doc of documents) sources.push({ type: "document", title: doc.name, pages: "p. 1" });
   const reply = `**Demo mode** - you asked: "${String(last).slice(0, 200)}"
 
-Here is where Luminary would give a deep, tailored explanation.
+Here is where Luminary would give a deep, tailored explanation${documents.length ? `, grounded in your ${documents.length} document(s)` : ""}${webSearch ? " and up-to-date web sources" : ""}.
 
 **Next step:** add your \`ANTHROPIC_API_KEY\` and restart with \`npm start\`.`;
   for (const chunk of reply.match(/.{1,24}/gs)) {
     onText(chunk);
     await new Promise((r) => setTimeout(r, 5));
   }
-  return reply;
+  return { text: reply, sources };
 }

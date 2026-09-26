@@ -87,6 +87,43 @@ async function withLoading(container, kind, fn) {
   }
 }
 
+// Upload a PDF as the raw request body. Returns the parsed JSON response.
+async function uploadPdfFile(file, path, params = {}) {
+  if (!file) return null;
+  const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+  if (!isPdf) throw new Error("Please choose a PDF file");
+  const max = state.status?.maxPdfBytes || 32 * 1024 * 1024;
+  if (file.size > max) throw new Error(`That PDF is too large (max ${Math.round(max / 1024 / 1024)} MB)`);
+  const query = new URLSearchParams({ filename: file.name, ...params });
+  const res = await fetch(`/api${path}?${query}`, { method: "POST", headers: { "Content-Type": "application/pdf" }, body: file });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+  return data;
+}
+
+function pickFile(accept = "application/pdf,.pdf") {
+  return new Promise((resolve) => {
+    const input = h("input", { type: "file", accept, style: "display:none" });
+    input.addEventListener("change", () => { resolve(input.files[0] || null); input.remove(); });
+    document.body.append(input);
+    input.click();
+  });
+}
+
+function sourcesList(sources) {
+  if (!sources?.length) return null;
+  return h("div", { class: "sources" },
+    h("div", { class: "sources-title" }, "Sources"),
+    h("ol", {}, sources.map((src) =>
+      h("li", {}, src.type === "web"
+        ? [h("a", { href: src.url, target: "_blank", rel: "noopener noreferrer" }, src.title), " ", h("span", { class: "muted" }, hostOf(src.url))]
+        : [h("span", {}, "📄 ", src.title), " ", h("span", { class: "muted" }, src.pages || "")]))));
+}
+
+function hostOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
+}
+
 const masteryClass = (score) => (score >= 60 ? "good" : score >= 30 ? "warn" : "bad");
 const bar = (percent) => h("div", { class: "bar" }, h("span", { style: `width:${Math.max(0, Math.min(100, percent))}%` }));
 
@@ -203,6 +240,17 @@ function renderHome() {
   const form = h("form", { class: "hero-form", onsubmit: (e) => { e.preventDefault(); explore().catch(() => {}); } },
     input, h("button", { class: "primary", type: "submit" }, "Explore →"));
 
+  const fromPdf = async () => {
+    const file = await pickFile();
+    if (!file) return;
+    const topic = await withLoading(status, "explore", () =>
+      uploadPdfFile(file, "/topics/from-pdf", { name: input.value.trim(), background: background.value }),
+    ).catch(() => null);
+    if (!topic) return;
+    await refreshSidebar();
+    go(`#/topic/${topic.id}`);
+  };
+
   const coachBox = h("div");
   const coach = h("div", { class: "card accent" },
     h("h2", {}, "What should I do next?"),
@@ -217,6 +265,9 @@ function renderHome() {
       h("h1", {}, "What do you want to understand?"),
       h("p", { class: "muted" }, "Go from zero to deep understanding of anything - then act on it, practise it and watch your mastery grow."),
       form,
+      h("div", { class: "row", style: "margin-top:10px" },
+        h("button", { type: "button", onclick: fromPdf, title: "Upload a textbook chapter, paper, lecture notes…" }, "📄 Learn from a PDF"),
+        h("span", { class: "small muted" }, "Upload notes, a paper or a chapter - everything gets built around it.")),
       h("details", { style: "margin-top:10px" }, h("summary", { class: "small muted" }, "Tell me about yourself (tailors the explanation)"), background),
       h("div", { class: "suggestions" }, SUGGESTIONS.map((s) => h("button", { type: "button", onclick: () => { input.value = s; explore(s).catch(() => {}); } }, s))),
       status),
@@ -311,7 +362,7 @@ async function renderTopic(id, tab, sub) {
 
   set(view(), header, tabs, body);
 
-  if (tab === "ask") return renderChat(body, id, topic.chat, map?.title || topic.name);
+  if (tab === "ask") return renderChat(body, id, topic.chat, map?.title || topic.name, topic.documents?.length || 0);
   if (tab === "act") return renderPlan(body, topic);
   if (tab === "practice") return renderPractice(body, topic, sub || "quiz");
   return renderUnderstand(body, topic);
@@ -354,6 +405,7 @@ function renderUnderstand(body, topic) {
   set(body, 
     map.why_it_matters ? h("div", { class: "card accent" }, h("h3", {}, "Why it matters"), h("p", { style: "margin:0" }, map.why_it_matters)) : null,
     map.prerequisites?.length ? h("p", { class: "small muted" }, h("strong", {}, "Helpful to know first: "), map.prerequisites.join(" · ")) : null,
+    documentsPanel(topic),
     h("div", { class: "card" }, steps, layerBox),
     h("div", { class: "grid two" },
       section("First principles",
@@ -383,6 +435,53 @@ function renderUnderstand(body, topic) {
   showLayer(0);
 }
 
+function documentsPanel(topic) {
+  const docs = topic.documents || [];
+  const status = h("div");
+  const fmtSize = (b) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+  const add = async () => {
+    const file = await pickFile();
+    if (!file) return;
+    const busy = h("div", { class: "loading" }, h("span", { class: "spinner" }), `Uploading ${file.name}…`);
+    set(status, busy);
+    try {
+      await uploadPdfFile(file, `/topics/${topic.id}/documents`);
+      toast("Document added - the tutor, quizzes and plans will now use it");
+      route();
+    } catch (err) {
+      set(status);
+      toast(err.message, true);
+    }
+  };
+
+  const rebuild = async (e) => {
+    e.currentTarget.disabled = true;
+    const done = await withLoading(status, "explore", () => api(`/topics/${topic.id}/regenerate`, { method: "POST" })).catch(() => null);
+    if (done) { toast("Depth map rebuilt from your sources"); route(); }
+  };
+
+  return h("div", { class: "card" },
+    h("div", { class: "row" },
+      h("h3", { style: "margin:0" }, "Your study materials"),
+      h("span", { class: "spacer" }),
+      docs.length < 5 ? h("button", { onclick: add }, "📄 Add PDF") : null),
+    docs.length
+      ? [h("ul", { class: "doc-list" }, docs.map((d) =>
+          h("li", {},
+            h("span", {}, "📄 ", h("strong", {}, d.name), " ", h("span", { class: "muted small" }, fmtSize(d.size))),
+            h("button", { class: "ghost small", title: "Remove", onclick: async () => {
+              if (!confirm(`Remove "${d.name}" from this topic?`)) return;
+              try { await api(`/topics/${topic.id}/documents/${d.id}`, { method: "DELETE" }); route(); } catch (err) { toast(err.message, true); }
+            } }, "Remove")))),
+        h("div", { class: "row" },
+          h("span", { class: "small muted" }, "Used by the tutor (with page citations), quizzes, action plans and teach-back grading."),
+          h("span", { class: "spacer" }),
+          h("button", { class: "ghost small", onclick: rebuild }, "Rebuild depth map from these"))]
+      : h("p", { class: "small muted", style: "margin:6px 0 0" }, "Add lecture notes, a textbook chapter or a paper (PDF, up to 32 MB). Your tutor will answer from it and cite pages, and quizzes will test what's in it."),
+    status);
+}
+
 // ---------------- chat ----------------
 function renderGeneralAsk() {
   const body = h("div");
@@ -393,8 +492,22 @@ function renderGeneralAsk() {
   api("/chat/general").then((chat) => renderChat(body, "general", chat, null)).catch((e) => toast(e.message, true));
 }
 
-function renderChat(body, ownerId, history, topicTitle) {
-  let mode = localStorage.getItem("luminary.mode") || "guide";
+function renderChat(body, ownerId, history, topicTitle, docCount = 0) {
+  let mode = "guide";
+  let web = true;
+  try {
+    mode = localStorage.getItem("luminary.mode") || "guide";
+    web = localStorage.getItem("luminary.web") !== "0";
+  } catch {}
+  const webAvailable = state.status?.webSearch !== false;
+  const webBtn = webAvailable
+    ? h("button", { type: "button", class: `toggle ${web ? "on" : ""}`, "aria-pressed": String(web), title: "Let the tutor search the web for current information", onclick: () => {
+        web = !web;
+        webBtn.classList.toggle("on", web);
+        webBtn.setAttribute("aria-pressed", String(web));
+        try { localStorage.setItem("luminary.web", web ? "1" : "0"); } catch {}
+      } }, "🌐 Web search")
+    : null;
   const log = h("div", { class: "chat" });
   const textarea = h("textarea", { placeholder: topicTitle ? `Ask anything about ${topicTitle}…` : "Ask any question…", rows: 2, maxlength: 8000 });
   const send = h("button", { class: "primary", type: "submit" }, "Send");
@@ -406,13 +519,13 @@ function renderChat(body, ownerId, history, topicTitle) {
       modeBtns.forEach((b) => b.classList.toggle("active", b.dataset.mode === m));
     }, "data-mode": m }, m === "guide" ? "Guide me" : "Socratic"));
 
-  const addMsg = (role, content) => {
-    const el = role === "user" ? h("div", { class: "msg user" }, content) : h("div", { class: "msg assistant" }, md(content));
+  const addMsg = (role, content, sources) => {
+    const el = role === "user" ? h("div", { class: "msg user" }, content) : h("div", { class: "msg assistant" }, md(content), sourcesList(sources));
     log.append(el);
     return el;
   };
 
-  history.forEach((m) => addMsg(m.role, m.content));
+  history.forEach((m) => addMsg(m.role, m.content, m.sources));
   if (!history.length) {
     log.append(h("div", { class: "empty" },
       h("p", {}, topicTitle ? `Ask your tutor anything about ${topicTitle}.` : "What are you curious about?"),
@@ -431,14 +544,17 @@ function renderChat(body, ownerId, history, topicTitle) {
     send.disabled = true;
     addMsg("user", message);
     const reply = addMsg("assistant", "");
-    set(reply, h("span", { class: "spinner" }));
+    const activity = h("div", { class: "activity" });
+    const textEl = h("div", {}, h("span", { class: "spinner" }));
+    set(reply, activity, textEl);
     reply.scrollIntoView({ behavior: "smooth", block: "end" });
     let text = "";
+    let sources = [];
     try {
       const res = await fetch(`/api/chat/${ownerId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, mode }),
+        body: JSON.stringify({ message, mode, webSearch: web }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Request failed");
       const reader = res.body.getReader();
@@ -455,25 +571,28 @@ function renderChat(body, ownerId, history, topicTitle) {
           if (!raw.startsWith("data: ")) continue;
           const evt = JSON.parse(raw.slice(6));
           if (evt.type === "text") text += evt.text;
+          if (evt.type === "search") activity.append(h("div", {}, "🔎 Searched the web", evt.query ? `: “${evt.query}”` : ""));
+          if (evt.type === "sources") sources = evt.sources;
           if (evt.type === "error") throw new Error(evt.error);
         }
         if (!pending) {
           pending = true;
           requestAnimationFrame(() => {
             pending = false;
-            set(reply, md(text));
+            if (text) set(textEl, md(text));
           });
         }
       }
-      set(reply, md(text));
+      set(textEl, md(text));
+      const list = sourcesList(sources);
+      if (list) reply.append(list);
       if (ownerId !== "general") {
         reply.append(h("div", { class: "row", style: "margin-top:10px" },
           h("button", { class: "ghost small", onclick: () => go(`#/topic/${ownerId}/act`) }, "Turn this into an action plan →"),
           h("button", { class: "ghost small", onclick: () => go(`#/topic/${ownerId}/practice/feynman`) }, "Teach it back")));
       }
     } catch (err) {
-      set(reply, h("span", { class: "muted" }, text ? "" : "No answer."));
-      if (text) set(reply, md(text));
+      set(textEl, text ? md(text) : h("span", { class: "muted" }, "No answer."));
       toast(err.message, true);
     }
     send.disabled = false;
@@ -488,6 +607,8 @@ function renderChat(body, ownerId, history, topicTitle) {
   set(body, 
     h("div", { class: "row", style: "margin-bottom:12px" },
       h("div", { class: "mode-toggle" }, modeBtns),
+      webBtn,
+      docCount ? h("span", { class: "pill", title: "The tutor reads your uploaded documents and cites page numbers" }, `📄 ${docCount} document${docCount === 1 ? "" : "s"}`) : null,
       h("span", { class: "small muted" }, "Guide: clear answers + next step. Socratic: guided questions."),
       h("span", { class: "spacer" }),
       history.length ? h("button", { class: "ghost small", onclick: async () => {

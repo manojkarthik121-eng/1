@@ -32,8 +32,15 @@ You produce a "depth map": a layered explanation of a topic that takes a learner
 from zero to expert-level intuition. Each layer must build on the previous one and
 go genuinely deeper - not just longer. Explanations are Markdown.`;
 
-export const depthMapPrompt = (topic, background) => `Build a depth map for: "${topic}"
-${background ? `\nLearner background / goal: ${background}\n` : ""}
+export const depthMapPrompt = (topic, background, documentNames = []) => `Build a depth map for: "${topic}"
+${background ? `\nLearner background / goal: ${background}\n` : ""}${
+  documentNames.length
+    ? `\nThe learner is studying the attached document(s): ${documentNames.join(", ")}.
+Build the depth map around what these documents cover - their key ideas, terminology and
+arguments - and use your broader knowledge to add intuition, context and depth beyond them.
+Flashcards should mostly test material from the documents.\n`
+    : ""
+}
 Requirements:
 - layers: exactly 5, in order: "Intuition (explain like I'm 12)", "Foundations", "Working knowledge", "Advanced", "Expert frontier". Each explanation 120-250 words.
 - first_principles: the 3-6 irreducible ideas everything else rests on.
@@ -68,7 +75,7 @@ export const DEPTH_MAP_SCHEMA = obj({
 
 // ---------- Ask: open-ended tutoring chat ----------
 
-export const chatSystem = (mode, snapshot) => {
+export const chatSystem = (mode, snapshot, { webSearch = false, hasDocuments = false } = {}) => {
   const modeText =
     mode === "socratic"
       ? `MODE: Socratic. Do not give the full answer immediately. Ask one or two guiding
@@ -82,6 +89,8 @@ stuck after a few exchanges or explicitly asks for the answer, explain it fully.
 
 The learner may ask anything at all - any subject, practical or theoretical.
 ${modeText}
+${hasDocuments ? `\nThe learner has shared study documents at the start of the conversation. When a question relates to them, ground your answer in them and cite them.` : ""}
+${webSearch ? `\nYou can search the web. Use it for anything recent, fast-changing, niche or where facts must be checked (news, prices, current research, statistics, versions). Don't search for timeless explanations you know well. Cite what you use.` : ""}
 ${snapshot ? `\nWhat you know about this learner (use it to tailor depth and examples; don't recite it):\n${snapshot}` : ""}`;
 };
 
@@ -106,7 +115,8 @@ Requirements:
 - milestones: 3-5 milestones spread across weeks, each with observable success criteria.
 - techniques: 2-4 evidence-based learning techniques chosen for THIS topic and goal, with exact instructions.
 - pitfalls: 3-5 traps learners of this topic commonly fall into.
-- checkpoint_questions: 3-5 questions the learner should be able to answer when done.`;
+- checkpoint_questions: 3-5 questions the learner should be able to answer when done.
+- If study documents are attached, ground the plan in them (use their terminology and content) while filling gaps from your own knowledge.`;
 
 const actionItem = obj({
   action: str("Specific, concrete action starting with a verb"),
@@ -140,7 +150,8 @@ ${snapshot ? `Learner data (target weak spots):\n${snapshot}\n` : ""}
 - About 60% "mcq" (exactly 4 options, answer_index 0-3) and 40% "short" (options empty, answer_index -1).
 - model_answer: the ideal answer (for mcq, restate the correct option).
 - explanation: why the answer is right and why tempting wrong answers are wrong.
-- concept: the concept being tested in 2-5 words.`;
+- concept: the concept being tested in 2-5 words.
+- If study documents are attached, ground the questions in them (use their terminology and content) while filling gaps from your own knowledge.`;
 
 export const QUIZ_SCHEMA = obj({
   questions: arr(
@@ -192,7 +203,9 @@ Concept the learner is explaining: ${concept || topic}
 Learner's explanation:
 """
 ${explanation}
-"""`;
+"""
+
+If study documents are attached, judge accuracy and completeness against them.`;
 
 export const FEYNMAN_SCHEMA = obj({
   accuracy: int("0-100: is it correct?"),
