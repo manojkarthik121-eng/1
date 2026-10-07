@@ -71,7 +71,7 @@ Luminary can run as a password-protected website, which is useful if your own co
 4. Click **Apply** and wait a few minutes for the first build.
 5. Open the `https://luminary-….onrender.com` address it shows, and log in.
 
-The blueprint uses Render's paid **Starter** plan with a small disk, so the app stays awake and your topics and progress are kept. You can switch it to the **Free** plan in Render's settings, but a free app sleeps when idle and loses saved data whenever it restarts. Check Render's pricing page for current prices.
+The blueprint uses Render's **Free** plan, so it needs no payment. A free app sleeps when idle (the first visit after a break takes up to a minute) and loses saved topics and progress whenever it restarts. To keep your data, switch to the paid **Starter** plan in Render and add a disk mounted at `/var/data`, with `LUMINARY_DATA=/var/data/db.json`. Check Render's pricing page for current prices.
 
 Security:
 - The app refuses to accept outside connections unless `LUMINARY_PASSWORD` is set.
