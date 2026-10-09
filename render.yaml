@@ -1,6 +1,7 @@
 # Render Blueprint: deploys Luminary as a password-protected website.
 # In Render: New + > Blueprint > pick this repository. You'll be asked for
-# ANTHROPIC_API_KEY and LUMINARY_PASSWORD.
+# ANTHROPIC_API_KEY and LUMINARY_PASSWORD, and optionally TAVILY_API_KEY
+# (leave it blank to use Claude's built-in web search).
 services:
   - type: web
     name: luminary
@@ -20,6 +21,8 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: LUMINARY_PASSWORD
+        sync: false
+      - key: TAVILY_API_KEY
         sync: false
       - key: HOST
         value: 0.0.0.0
