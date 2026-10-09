@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Store } from "./store.js";
 import { newCard, review, isDue } from "./srs.js";
 import { overview, topicMastery, learnerSnapshot, planProgress } from "./progress.js";
-import { generateJSON, streamChat, uploadPdf, deleteFile, toAppError, AppError, MODEL, MOCK, WEB_SEARCH } from "./claude.js";
+import { generateJSON, streamChat, uploadPdf, deleteFile, toAppError, AppError, MODEL, MOCK, WEB_SEARCH, SEARCH_PROVIDER } from "./claude.js";
 import * as P from "./prompts.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -123,7 +123,7 @@ export function createApp(store, { password = process.env.LUMINARY_PASSWORD } = 
     res.json({
       authRequired: Boolean(auth),
       authenticated,
-      ...(authenticated && { model: MODEL, mock: MOCK, webSearch: WEB_SEARCH, maxPdfBytes: MAX_PDF_BYTES }),
+      ...(authenticated && { model: MODEL, mock: MOCK, webSearch: WEB_SEARCH, searchProvider: SEARCH_PROVIDER, maxPdfBytes: MAX_PDF_BYTES }),
     });
   });
 

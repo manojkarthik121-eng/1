@@ -3,6 +3,7 @@
 // returned so the app can be demoed and tested without an API key.
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import * as mock from "./mock.js";
+import * as tavily from "./tavily.js";
 
 export const MODEL = process.env.LUMINARY_MODEL || "claude-opus-5";
 export const MOCK = process.env.LUMINARY_MOCK === "1" || process.argv.includes("--demo");
@@ -13,8 +14,15 @@ const FALLBACK_MODELS = new Set(["claude-opus-5", "claude-fable-5-1"]);
 const USE_FALLBACKS =
   process.env.LUMINARY_FALLBACKS !== "0" && FALLBACK_MODELS.has(MODEL);
 
-// Web search is a server tool: Claude decides when a question needs it.
+// Web search: Claude decides when a question needs it. With TAVILY_API_KEY
+// set it searches through Tavily; otherwise it uses the server-side
+// web_search tool. LUMINARY_SEARCH_PROVIDER=anthropic|tavily overrides this.
 export const WEB_SEARCH = process.env.LUMINARY_WEB_SEARCH !== "0";
+export const SEARCH_PROVIDER =
+  process.env.LUMINARY_SEARCH_PROVIDER === "anthropic" || process.env.LUMINARY_SEARCH_PROVIDER === "tavily"
+    ? process.env.LUMINARY_SEARCH_PROVIDER
+    : process.env.TAVILY_API_KEY ? "tavily" : "anthropic";
+const MAX_SEARCHES = 5;
 
 export class AppError extends Error {
   constructor(status, message) {
@@ -112,8 +120,9 @@ function documentBlocks(documents = [], { citations = false } = {}) {
 }
 
 // Pull de-duplicated sources out of a reply: web citations and search
-// results, plus page-level citations into uploaded documents.
-export function extractSources(content) {
+// results, plus page-level citations into uploaded documents. `searched`
+// holds Tavily results ({ url, title }), shown if nothing was cited inline.
+export function extractSources(content, searched = []) {
   const sources = [];
   const seen = new Set();
   const add = (key, source) => {
@@ -126,6 +135,8 @@ export function extractSources(content) {
     for (const c of block.citations ?? []) {
       if (c.type === "web_search_result_location") {
         add(c.url, { type: "web", url: c.url, title: c.title || c.url });
+      } else if (c.type === "search_result_location") {
+        add(c.source, { type: "web", url: c.source, title: c.title || c.source });
       } else if (c.type === "page_location") {
         const pages = c.start_page_number === c.end_page_number - 1 || c.start_page_number === c.end_page_number
           ? `p. ${c.start_page_number}`
@@ -142,6 +153,7 @@ export function extractSources(content) {
         if (r.type === "web_search_result") add(r.url, { type: "web", url: r.url, title: r.title || r.url });
       }
     }
+    for (const r of searched.slice(0, 5)) add(r.url, { type: "web", url: r.url, title: r.title || r.url });
   }
   return sources;
 }
@@ -196,24 +208,45 @@ export async function streamChat({ system, messages, documents = [], webSearch =
         ...messages,
       ]
     : [...messages];
-  const tools = webSearch ? [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }] : undefined;
+  const useTavily = webSearch && SEARCH_PROVIDER === "tavily";
+  const tools = !webSearch
+    ? undefined
+    : useTavily
+      ? [tavily.TOOL]
+      : [{ type: "web_search_20260209", name: "web_search", max_uses: MAX_SEARCHES }];
 
   try {
     const content = [];
-    for (let i = 0; i < MAX_CONTINUATIONS; i++) {
+    const searched = [];
+    let searches = 0;
+    for (let i = 0; i < MAX_CONTINUATIONS + MAX_SEARCHES; i++) {
+      // Once the Tavily search budget is spent, make Claude answer with what it has.
+      const toolChoice = useTavily && searches >= MAX_SEARCHES ? { tool_choice: { type: "none" } } : {};
       const stream = getClient().beta.messages.stream(
-        { ...baseParams(effort), max_tokens: 64000, system, messages: convo, ...(tools && { tools }) },
+        { ...baseParams(effort), max_tokens: 64000, system, messages: convo, ...(tools && { tools }), ...toolChoice },
         { signal },
       );
       stream.on("text", (delta) => onText(delta));
       stream.on("contentBlock", (block) => {
-        if (block.type === "server_tool_use" && block.name === "web_search") onSearch?.(block.input?.query ?? "");
+        const isSearch = block.name === "web_search" && (block.type === "server_tool_use" || (useTavily && block.type === "tool_use"));
+        if (isSearch) onSearch?.(block.input?.query ?? "");
       });
       const message = await stream.finalMessage();
       content.push(...message.content);
       // A long server-tool turn can pause; send it back to let Claude continue.
-      if (message.stop_reason === "pause_turn") {
+      if (message.stop_reason === "pause_turn" && i < MAX_CONTINUATIONS) {
         convo.push({ role: "assistant", content: message.content });
+        continue;
+      }
+      // Claude asked for Tavily searches: run them and send back the results.
+      if (message.stop_reason === "tool_use" && useTavily) {
+        const calls = message.content.filter((b) => b.type === "tool_use");
+        const results = await Promise.all(calls.map((b) => tavily.toolResult(b, { signal })));
+        searches += calls.length;
+        for (const r of results) {
+          if (Array.isArray(r.content)) searched.push(...r.content.filter((c) => c.type === "search_result").map((c) => ({ url: c.source, title: c.title })));
+        }
+        convo.push({ role: "assistant", content: message.content }, { role: "user", content: results });
         continue;
       }
       checkStop(message, { allowTruncated: true });
@@ -221,7 +254,7 @@ export async function streamChat({ system, messages, documents = [], webSearch =
     }
     return {
       text: content.filter((b) => b.type === "text").map((b) => b.text).join(""),
-      sources: extractSources(content),
+      sources: extractSources(content, searched),
     };
   } catch (err) {
     throw toAppError(err);
