@@ -55,6 +55,8 @@ See `.env.example`. All settings are optional:
 - `LUMINARY_MODEL`: defaults to `claude-opus-5`.
 - `LUMINARY_FALLBACKS=0`: turns off server-side refusal fallbacks. They are on by default for Opus 5, so a request that a safety classifier declines is retried on a fallback model instead of failing.
 - `LUMINARY_WEB_SEARCH=0`: turns web search off for everyone (it can also be turned off per chat in the UI). Web search must be enabled for your organization in the Anthropic Console, and searches are billed per use.
+- `TAVILY_API_KEY`: search the web through [Tavily](https://tavily.com) instead of Claude's built-in web search. This is useful if built-in web search isn't enabled for your organization. Tavily has a free monthly allowance.
+- `LUMINARY_SEARCH_PROVIDER`: `tavily` or `anthropic`. By default Tavily is used when `TAVILY_API_KEY` is set.
 - `LUMINARY_MOCK=1`: demo mode.
 - `PORT` / `HOST`: default `3000` / `127.0.0.1`.
 - `LUMINARY_DATA`: where your data is saved (default `./data/db.json`).
@@ -84,6 +86,7 @@ public/            no-build single-page app (vanilla JS, marked + DOMPurify for 
 server/index.js    Express API routes
 server/claude.js   Anthropic SDK wrapper: structured outputs, streaming chat with web search,
                    Files API uploads, citation/source extraction, error mapping
+server/tavily.js   Tavily web search, exposed to Claude as a client tool
 server/prompts.js  system prompts and JSON schemas for every feature
 server/progress.js mastery, streaks, heatmap, learner snapshot fed back to Claude
 server/srs.js      SM-2 spaced repetition
@@ -92,7 +95,7 @@ server/mock.js     canned responses for demo mode and tests
 ```
 
 - Depth maps, plans, quizzes, grading, Feynman feedback and coaching use **structured outputs** (`output_config.format` with a JSON schema), so the replies always have a shape the app can read.
-- The tutor streams its replies to the browser over Server-Sent Events. Web search uses Claude's server-side `web_search` tool. Long searches that return `pause_turn` are resumed automatically, and cited sources are pulled out of the reply's citations.
+- The tutor streams its replies to the browser over Server-Sent Events. Web search uses Claude's server-side `web_search` tool. Long searches that return `pause_turn` are resumed automatically, and cited sources are pulled out of the reply's citations. With Tavily, `web_search` is a client tool instead: the server runs each search Claude asks for (up to 5 per reply) and returns the pages as `search_result` blocks, so Claude cites them the same way.
 - PDFs are uploaded once through the **Files API** and referenced by `file_id`. They are sent as a fixed, cached prefix (`cache_control`), so follow-up questions about the same documents cost much less. Citations are enabled for chat only, because they can't be combined with structured outputs.
 - Every AI call includes a short **learner snapshot**: mastery, weak concepts from the last quiz, gaps from the last teach-back and plan progress. This lets explanations, quizzes and plans adapt to you over time.
 - Quiz answers stay on the server until you submit.
