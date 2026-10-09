@@ -67,9 +67,10 @@ Luminary can run as a password-protected website, which is useful if your own co
 
 1. Sign up at render.com using **Sign in with GitHub**.
 2. Click **New + → Blueprint** and choose this repository.
-3. Fill in the two secrets it asks for:
+3. Fill in the secrets it asks for:
    - `ANTHROPIC_API_KEY`: your key from console.anthropic.com
    - `LUMINARY_PASSWORD`: a strong password you'll use to log in
+   - `TAVILY_API_KEY` (optional): your key from tavily.com, to search the web through Tavily. Leave it blank to use Claude's built-in web search.
 4. Click **Apply** and wait a few minutes for the first build.
 5. Open the `https://luminary-….onrender.com` address it shows, and log in.
 
