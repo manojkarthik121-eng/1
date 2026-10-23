@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: salaried-couple-statements
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  Reads both statements, excludes the credit-card bill payment from spending, finds the leaks
+  (food delivery, Dream11, card finance charges, cash), puts the 42% credit card first in debt
+  payoff, flags missing term insurance and own health cover, plans the house and two college goals,
+  and delivers an Excel workbook plus a written action plan.

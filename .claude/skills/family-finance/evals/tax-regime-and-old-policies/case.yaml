@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: tax-regime-and-old-policies
+expected_outcome: |
+  Computes old vs new regime with real numbers, evaluates the LIC endowment and ULIP without blanket
+  surrender advice, flags term-insurance and health-cover gaps for a single-income family, plans both
+  children's education and retirement at 55 with inflation, and delivers an Excel workbook plus plan.
