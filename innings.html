@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily Innings</title>
+<style>
+:root{--bg:#e8eee1;--surface:#f6f8f1;--ink:#14281d;--muted:#5b6d60;--line:#c5d1bd;--ball:#b3261e;--pitch:#d8c9a3}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1c14;--surface:#172a1e;--ink:#e6efe0;--muted:#93a898;--line:#2c4434;--ball:#ef6a60;--pitch:#3a3524}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.45}
+main{max-width:520px;margin:0 auto;padding:20px 18px 40px}
+h1{font-size:15px;font-weight:600;margin:0;color:var(--muted)}
+.score{background:var(--pitch);border-radius:14px;padding:18px 20px;margin:12px 0 18px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.runs{font-size:76px;font-weight:800;line-height:.9;letter-spacing:-2px}
+.runs small{display:block;font-size:14px;font-weight:600;letter-spacing:0;color:var(--muted);margin-top:8px}
+.meta{text-align:right;font-size:14px;color:var(--muted)}
+.meta b{display:block;font-size:22px;color:var(--ink)}
+.timer{display:flex;align-items:center;gap:12px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 16px;margin-bottom:18px}
+.time{font-size:36px;font-weight:800;font-variant-numeric:tabular-nums;min-width:110px}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);padding:8px 14px;font-weight:600}
+button.go{background:var(--ball);border-color:var(--ball);color:#fff}
+form{display:flex;gap:8px;margin-bottom:10px}
+input[type=text]{flex:1;font:inherit;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);min-width:0}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line)}
+li input{width:22px;height:22px;accent-color:var(--ball);flex:none}
+li span{flex:1}
+li.done span{text-decoration:line-through;color:var(--muted)}
+li button{border:0;color:var(--muted);padding:4px 8px}
+.empty{color:var(--muted);padding:16px 4px}
+.note{color:var(--muted);font-size:13px;margin-top:20px}
+</style>
+</head>
+<body>
+<main>
+<h1 id="date"></h1>
+<section class="score">
+  <div class="runs"><span id="runs">0</span><small>runs today</small></div>
+  <div class="meta"><b id="streak">0</b>day streak<br><b id="sessions">0</b>focus sessions</div>
+</section>
+<section class="timer">
+  <div class="time" id="time">25:00</div>
+  <button class="go" id="start">Start focus</button>
+  <button id="reset">Reset</button>
+</section>
+<form id="form">
+  <input type="text" id="task" placeholder="What will you do today?" maxlength="80" autocomplete="off">
+  <button class="go" type="submit">Add</button>
+</form>
+<ul id="list"></ul>
+<p class="note">Task done = 20 runs. Focus session finished = 10 runs. Your streak counts days with at least 1 run.</p>
+</main>
+<script>
+var KEY='daily-innings-v1';
+var data={days:{}};
+try{var raw=localStorage.getItem(KEY);if(raw)data=JSON.parse(raw)||data;}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(data));}catch(e){}}
+function dkey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+var today=dkey(new Date());
+function day(){if(!data.days[today])data.days[today]={tasks:[],sessions:0};return data.days[today];}
+function runsOf(k){var d=data.days[k];if(!d)return 0;return d.tasks.filter(function(t){return t.done;}).length*20+d.sessions*10;}
+function streak(){var n=0,d=new Date();if(runsOf(dkey(d))===0)d.setDate(d.getDate()-1);while(runsOf(dkey(d))>0){n++;d.setDate(d.getDate()-1);}return n;}
+function render(){
+  var d=day();
+  document.getElementById('date').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'});
+  document.getElementById('runs').textContent=runsOf(today);
+  document.getElementById('streak').textContent=streak();
+  document.getElementById('sessions').textContent=d.sessions;
+  var ul=document.getElementById('list');ul.innerHTML='';
+  if(!d.tasks.length){var e=document.createElement('li');e.className='empty';e.textContent='No tasks yet. Add your first one above.';ul.appendChild(e);}
+  d.tasks.forEach(function(t,i){
+    var li=document.createElement('li');if(t.done)li.className='done';
+    var cb=document.createElement('input');cb.type='checkbox';cb.checked=t.done;
+    cb.onchange=function(){t.done=cb.checked;save();render();};
+    var sp=document.createElement('span');sp.textContent=t.text;
+    var del=document.createElement('button');del.textContent='Remove';
+    del.onclick=function(){d.tasks.splice(i,1);save();render();};
+    li.appendChild(cb);li.appendChild(sp);li.appendChild(del);ul.appendChild(li);
+  });
+}
+document.getElementById('form').onsubmit=function(ev){
+  ev.preventDefault();var inp=document.getElementById('task');var v=inp.value.trim();
+  if(!v)return;day().tasks.push({text:v,done:false});inp.value='';save();render();
+};
+var LEN=25*60,left=LEN,iv=null;
+function show(){var m=Math.floor(left/60),s=left%60;document.getElementById('time').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');}
+var startBtn=document.getElementById('start');
+startBtn.onclick=function(){
+  if(iv){clearInterval(iv);iv=null;startBtn.textContent='Resume';return;}
+  startBtn.textContent='Pause';
+  iv=setInterval(function(){
+    left--;show();
+    if(left<=0){clearInterval(iv);iv=null;left=LEN;show();startBtn.textContent='Start focus';day().sessions++;save();render();}
+  },1000);
+};
+document.getElementById('reset').onclick=function(){clearInterval(iv);iv=null;left=LEN;show();startBtn.textContent='Start focus';};
+show();render();
+</script>
+</body>
+</html>
