@@ -24,3 +24,13 @@
 - Work on the practice branch, not the main code.
 - Explain what you plan to change before big edits.
 - I am learning, so use simple language and keep answers short.
+
+## My preferences
+- Use simple language and short answers.
+- Give exact steps, one at a time, and say which file or button to use.
+- I work on a Windows 7 PC, so I use GitHub Codespaces.
+- I am on a free Claude account, so avoid steps that need paid Claude Code unless I ask.
+
+## Current focus
+- Learning Claude Code: CLAUDE.md, skills and sub-agents are done. Memory is next.
+- Innings is live on GitHub Pages and I use it daily.
