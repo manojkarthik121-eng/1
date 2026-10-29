@@ -30,6 +30,15 @@ li.done span{text-decoration:line-through;color:var(--muted)}
 li button{border:0;color:var(--muted);padding:4px 8px}
 .empty{color:var(--muted);padding:16px 4px}
 .note{color:var(--muted);font-size:13px;margin-top:20px}
+/* NEW: weekly history styles */
+h2{font-size:15px;font-weight:600;color:var(--muted);margin:0 0 8px}
+.week{display:flex;gap:6px;align-items:flex-end;margin-bottom:6px}
+.col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:var(--muted)}
+.col i{display:block;width:100%;background:var(--ball);border-radius:4px 4px 0 0;min-height:3px;opacity:.55}
+.col b{font-weight:600}
+.col.today i{opacity:1}
+.col.today b{color:var(--ink)}
+.best{color:var(--muted);font-size:13px;margin:0 0 18px}
 </style>
 </head>
 <body>
@@ -39,6 +48,12 @@ li button{border:0;color:var(--muted);padding:4px 8px}
   <div class="runs"><span id="runs">0</span><small>runs today</small></div>
   <div class="meta"><b id="streak">0</b>day streak<br><b id="sessions">0</b>focus sessions</div>
 </section>
+
+<!-- NEW: weekly history -->
+<h2>Last 7 days</h2>
+<div class="week" id="week"></div>
+<p class="best" id="best"></p>
+
 <section class="timer">
   <div class="time" id="time">25:00</div>
   <button class="go" id="start">Start focus</button>
@@ -61,6 +76,29 @@ var today=dkey(new Date());
 function day(){if(!data.days[today])data.days[today]={tasks:[],sessions:0};return data.days[today];}
 function runsOf(k){var d=data.days[k];if(!d)return 0;return d.tasks.filter(function(t){return t.done;}).length*20+d.sessions*10;}
 function streak(){var n=0,d=new Date();if(runsOf(dkey(d))===0)d.setDate(d.getDate()-1);while(runsOf(dkey(d))>0){n++;d.setDate(d.getDate()-1);}return n;}
+
+/* NEW: draws the last 7 days as bars */
+function renderWeek(){
+  var days=[],max=30;
+  for(var i=6;i>=0;i--){
+    var d=new Date();d.setDate(d.getDate()-i);
+    var r=runsOf(dkey(d));
+    if(r>max)max=r;
+    days.push({d:d,r:r,today:i===0});
+  }
+  var wk=document.getElementById('week');wk.innerHTML='';
+  var best=0;
+  days.forEach(function(x){
+    if(x.r>best)best=x.r;
+    var col=document.createElement('div');col.className='col'+(x.today?' today':'');
+    var n=document.createElement('b');n.textContent=x.r;
+    var bar=document.createElement('i');bar.style.height=Math.round(x.r/max*70)+'px';
+    var lab=document.createElement('span');lab.textContent=x.d.toLocaleDateString(undefined,{weekday:'short'});
+    col.appendChild(n);col.appendChild(bar);col.appendChild(lab);wk.appendChild(col);
+  });
+  document.getElementById('best').textContent=best>0?'Best day this week: '+best+' runs':'Score some runs to see your week here.';
+}
+
 function render(){
   var d=day();
   document.getElementById('date').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'});
@@ -78,6 +116,7 @@ function render(){
     del.onclick=function(){d.tasks.splice(i,1);save();render();};
     li.appendChild(cb);li.appendChild(sp);li.appendChild(del);ul.appendChild(li);
   });
+  renderWeek(); /* NEW */
 }
 document.getElementById('form').onsubmit=function(ev){
   ev.preventDefault();var inp=document.getElementById('task');var v=inp.value.trim();
