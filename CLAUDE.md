@@ -32,5 +32,5 @@
 - I am on a free Claude account, so avoid steps that need paid Claude Code unless I ask.
 
 ## Current focus
-- Learning Claude Code: CLAUDE.md, skills and sub-agents are done. Memory is next.
-- Innings is live on GitHub Pages and I use it daily.
+- Learning Claude Code: CLAUDE.md, skills,sub-agents,memory and notes are done. Token management is next.
+-My notes are in the notes/ folder.Read them for context on what I've learned.
